@@ -120,13 +120,13 @@ task = tfrs.tasks.Retrieval(
 
 
 class MovieLensModel(tfrs.Model):
-    def __init__(self, user_model, movie_model, task):
+    def __init__(self, user_model, movie_model):
         super().__init__()
-        self.movie_model: tf.keras.Model = movie_titles
+        self.movie_model: tf.keras.Model = movie_model
         self.user_model: tf.keras.Model = user_model
         self.task: tf.keras.layers.Layer = task
 
-    def compute_loss(self, features: Dict[Text, tf.Tensor], training=false) -> tf.Tensor:
+    def compute_loss(self, features: Dict[Text, tf.Tensor], training=False) -> tf.Tensor:
         # We pick  out the user features and pass them  into the user model
         user_embeddings = self.user_model(features["user_id"])
         # And pick out the movie features and pass them into de movie model
@@ -192,7 +192,7 @@ class NoBaseClassMovielensModel(tf.keras.Model):
         return metrics
 
 #Fitting and evaluating
-model = MovieLensModel(user_model, movie_model, task)
+model = MovieLensModel(user_model, movie_model)
 model.compile(optimizer=tf.keras.optimizers.Adagrad(learning_rate=0.1))
 
 #Then shuffle, batch, and cache the training and evaluation data.
@@ -202,3 +202,27 @@ cached_test = test.batch(4096).cache()
 #Train the model
 model.fit(cached_train, epochs=3)
 
+#As the model trains, the loss is falling and a set of top-k retrieval 
+# metrics is updated. These tell us whether the true positive is in 
+# the top-k retrieved items from the entire candidate set. For example, 
+# a top-5 categorical accuracy metric of 0.2 would tell us that, on 
+# average, the true positive is in the top 5 retrieved items 20% of 
+# the time.
+
+#Note that, in this example, we evaluate the metrics during training 
+# as well as evaluation. Because this can be quite slow with large 
+# candidate sets, it may be prudent to turn metric calculation off 
+# in training, and only run it in evaluation.
+
+
+model.evaluate(cached_test, return_dict=True)
+
+#Make predictions
+#Create a model that takes in raw query features and
+index = tfrs.layers.factorized_top_k.BruteForce(model.user_model)
+#recommends movies out of the entire movie set
+index.index(movies.batch(100).map(model.movie_model), movies)
+
+#Get recommendation
+_, titles = index(tf.constant(["42"]))
+print(f"Recommendations for user 42: {titles[0, :3]}")
